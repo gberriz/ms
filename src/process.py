@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 import re
+import os.path as op
+import os
+import errno as er
 
 # ---------------------------------------------------------------------------
 
@@ -98,6 +101,7 @@ def normalize_c(df):
         jj = get_headers_for_prefix(df, pfx)
 
         df0.loc[ii, jj] = rowscale(df0.loc[ii, jj], s)
+
         if np.any(~hh):
             ii0 = idx[~hh]
             jj0 = [j for j in jj if j != controlcol]
@@ -127,6 +131,27 @@ def main(inputfile):
 
     return ret
 
+def mkdirp(path):
+    try:
+        os.makedirs(path)
+    except OSError, e:
+        if e.errno != er.EEXIST: raise
+
+def _basename(path):
+    return op.splitext(op.basename(path))[0]
+
+def output_dir(inputfile):
+    return op.join('data', 'processed', _basename(inputfile))
+
+def output_path(output_dir, basename):
+    return op.join(output_dir, re.sub(r'(\.\w+)?$', '.tsv', basename))
+
+def write_tbl(df, output_dir, basename):
+    outpath = output_path(output_dir, basename)
+    df.to_csv(outpath, index=False, sep='\t')
+    import sys
+    print >> sys.stderr, 'output to %s' % outpath
+
 def main(inputfile):
     df = pd.io.parsers.read_table(inputfile, sep='\t')
 
@@ -140,12 +165,41 @@ def main(inputfile):
     # 5.
     df = dropcols(df, lambda x: re.match(r'^Set(?:12|AtoD|EtoH|5~cq_1(?:28|30)[ab]_sn_sum)\b', x))
 
+    outdir = output_dir(inputfile)
+    mkdirp(outdir)
+    # 8.
+    df = normalize_a(df)
+    write_tbl(df, outdir, 'norm_a')
+
+    # 9.
+    df = normalize_b(df)
+    write_tbl(df, outdir, 'norm_b')
+
     # 8. & 9.
-    df = normalize_ab(df)
+    #df = normalize_ab(df)
 
     # 10.
     df = normalize_c(df)
+    write_tbl(df, outdir, 'norm_c')
 
+    return
+
+    godf_tsv = 'data/tsv/GO_NSAF/GO_NSAF.tsv'
+    godf = dropcols(pd.io.parsers.read_table(godf_tsv, sep='\t'), 'Gene')
+
+    assert set.issuperset(set(godf.loc[:, 'Uniprot-l']),
+                          set(df.loc[:, 'Uniprot-l']))
+
+    # df = df.merge(godf.loc[:, ['Uniprot-l', 'GOCC']],
+    #               on='Uniprot-l', how='inner')
+
+    df = df.merge(godf, on='Uniprot-l', how='inner')
+
+    # cn = pd.io.parsers.read_table('data/tsv/convert_names.tsv', sep='\t')
+    # lkp = dict(zip(cn.iloc[:, 0], cn.iloc[:, 1]))
+
+    # df.columns = [lkp.get(c, c) for c in df.columns]
 
 if __name__ == "__main__":
-    main('data/orig/BrCa_Sets1_12_AtoD_EtoH_AtoD2_EtoH2_DrugsA_B_Tryps_140806_Quant.tsv')
+    import sys
+    main(sys.argv[1])
