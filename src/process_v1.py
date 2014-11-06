@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import re
@@ -8,18 +10,20 @@ import errno as er
 # ---------------------------------------------------------------------------
 
 SEP = '~'
-REFSET = 'S0'
+
+PPFX = 'S'
+REFPFX = PPFX + '0'
 REFSFX = 'C0'
-AVGSFX = 'AV'
 CTRLSFXS = set(('C0', 'C1'))
 
-# ---------------------------------------------------------------------------
+PPFX = 'Set'
+REFPFX = PPFX + '1'
+REFSFX = 'cq_126_sn_sum'
+CTRLSFXS = set(('cq_126_sn_sum', 'cq_131_sn_sum'))
 
-# def split_first_col(df):
-#     tmp = np.vstack(df.iloc[:, 0].map(lambda x: np.array(re.split(r'\|', x))).values)
-#     df0 = pd.DataFrame(tmp[:, [1, 0]], columns=('Uniprot', 'Sp/Tr'), index=df.index)
-#     df1 = df.iloc[:, 1:]
-#     return pd.concat((df0, df1), axis=1)
+AVGSFX = 'AV'
+
+# ---------------------------------------------------------------------------
 
 def split_first_col(df):
     tmp = np.vstack(df.iloc[:, 0].map(lambda x: np.array(re.split(r'\|', x))).values)
@@ -76,19 +80,6 @@ def get_countscols(df):
     return sum([get_headers_for_prefix(df, pfx) for pfx in
                 get_first_control_col_pfxs(df)], [])
 
-# not this...
-# def normalize_a(df):
-#     for pfx in get_pfxs(df):
-#         refcol = build_hdr(pfx, REFSFX)
-#         tgt = get_headers_for_prefix(df, pfx)
-#         s = float(df.loc[:, refcol].sum())/df.loc[:, tgt].sum()
-#         df = colscale(df, tgt, s)
-#     return df
-
-# def refsum(df, pfx):
-#     ctrlhdrs = [build_hdr(pfx, sfx) for sfx in CTRLSFXS]
-#     return float(df.loc[:, ctrlhdrs].values.ravel().sum()/len(ctrlhdrs))
-
 def refsum(df, pfx):
     return float(df.loc[:, build_hdr(pfx, AVGSFX)].sum())
 
@@ -100,17 +91,6 @@ def add_av_cols(df):
         df0.loc[:, avcolhdr] = df0.loc[:, ctrlhdrs].mean(axis=1)
     return df0
 
-# nor this...
-# def normalize_a(df):
-#     for pfx in get_pfxs(df):
-#         tgt = get_headers_for_prefix(df, pfx)
-#         ctrlhdrs = [build_hdr(pfx, sfx) for sfx in CTRLSFXS]
-#         n = refsum(df, pfx)
-#         d = df.loc[:, tgt].sum()
-#         df = colscale(df, tgt, n/d)
-#     return df
-
-
 def normalize_a(df):
     for pfx in get_pfxs(df):
         tgt = get_headers_for_prefix(df, pfx)
@@ -118,19 +98,6 @@ def normalize_a(df):
         d = df.loc[:, tgt].sum()
         df = colscale(df, tgt, n/d)
     return df
-
-
-
-# def normalize_b(df):
-#     df0 = df.copy()
-#     refcol = build_hdr(REFPFX, REFSFX)
-#     num = float(df0.loc[:, refcol].sum())
-#     for pfx in get_first_control_col_pfxs(df0):
-#         ctrlcol = build_hdr(pfx, REFSFX)
-#         s = num/float(df0.loc[:, ctrlcol].sum())
-#         tgt = get_headers_for_prefix(df0, pfx)
-#         df0.loc[:, tgt] = s * df0.loc[:, tgt].values
-#     return df0
 
 def normalize_b(df):
     df0 = df.copy()
@@ -169,54 +136,18 @@ def normalize_c(df):
         # jj = [j for j in get_headers_for_prefix(df0, pfx)
         #       if not parse_hdr(j)[1] in CTRLSFXS.union((AVGSFX,))]
 
-        if pfx == 'Set3':
-            import pdb
-            pdb.set_trace()
-            pass
-
         df0.loc[ii, jj] = rowscale(df0.loc[ii, jj], s)
 
         if np.any(~hh):
             ii0 = idx[~hh]
+
             # jj0 = [j for j in jj
             #        if not parse_hdr(j)[1] in CTRLSFXS.union((AVGSFX,))]
             # df0.loc[ii0, jj0] = np.inf
+
             df0.loc[ii0, jj] = np.inf
 
     return df0
-
-
-# def normalize_c(df):
-
-#     df0 = df.copy()
-
-#     refsfx = REFSFX
-
-#     refcol = build_hdr(REFPFX, refsfx)
-#     ref = df0.loc[:, refcol].astype(np.float64)
-#     idx = df.index
-
-#     for pfx in get_pfxs(df0):
-#         controlcol = build_hdr(pfx, refsfx)
-
-#         hh = (df0.loc[:, controlcol] != 0)
-#         ii = idx[hh]
-
-#         s = ref[ii]/(df0.loc[ii, controlcol].astype(np.float64))
-#         jj = [j for j in get_headers_for_prefix(df0, pfx)
-#               if not parse_hdr(j)[1] in CTRLSFXS.union((AVGSFX,))]
-
-#         df0.loc[ii, jj] = rowscale(df0.loc[ii, jj], s)
-
-#         if np.any(~hh):
-#             ii0 = idx[~hh]
-#             # jj0 = [j for j in jj
-#             #        if not parse_hdr(j)[1] in CTRLSFXS.union((AVGSFX,))]
-#             # df0.loc[ii0, jj0] = np.inf
-#             df0.loc[ii0, jj] = np.inf
-
-#     return df0
-
 
 def almost_equal(a, b, reltol=1e-6):
     d = np.max((np.max(np.abs(a)), np.max(np.abs(b))))
@@ -261,10 +192,20 @@ def to_tsv(df):
 def write_tbl(df, output_dir, basename):
 
     def key((i, hdr)):
+
         if not SEP in hdr:
             return (0, i)
+
         pfx, sfx = parse_hdr(hdr)
-        n = int(pfx[1:])
+
+        idx = re.sub('^' + PPFX, '', pfx)
+        try:
+            n, s = int(idx), ''
+        except ValueError, e:
+            if not e.message.startswith('invalid literal for int() with base 10'):
+                raise
+            n, s = sys.maxint, idx
+
         if sfx == AVGSFX:
             m = -3
         elif sfx == REFSFX:
@@ -273,7 +214,8 @@ def write_tbl(df, output_dir, basename):
             m = -1
         else:
             m = i
-        return (1, n, m)
+
+        return (1, n, s, m, sfx)
 
     sorted_cols = [c for _, c in sorted(enumerate(df.columns), key=key)]
 
@@ -295,44 +237,9 @@ def write_tbl(df, output_dir, basename):
         
         print >> fh, '%s\t%s' % ('\t'.join(['' for c in sorted_cols if not SEP in c]), sums)
 
-    import sys
     print >> sys.stderr, outpath
 
-# def write_tbl(df, output_dir, basename):
-#     outpath = output_path(output_dir, basename)
-
-#     def key((i, hdr)):
-#         if not SEP in hdr:
-#             return (0, i)
-#         pfx, sfx = parse_hdr(hdr)
-#         n = int(pfx[3:])
-#         if sfx == REFSFX:
-#             m = -3
-#         elif sfx in CTRLSFXS:
-#             m = -2
-#         elif sfx == AVGSFX:
-#             m = -1
-#         else:
-#             m = i
-#         return (1, -n, m)
-
-#     sorted_cols = [c for _, c in sorted(enumerate(df.columns), key=key)
-#                    if c == 'Uniprot' or SEP in c]
-
-#     df0 = df.loc[:, sorted_cols]
-
-#     #cn = pd.io.parsers.read_table('data/orig/Convert names_MH.tsv', sep='\t')
-#     #cn = pd.io.parsers.read_table('data/tsv/Convert names2/Sheet1.tsv', sep='\t')
-#     cn = pd.io.parsers.read_table('data/tsv/convert_names.tsv', sep='\t')
-#     lkp = dict(zip(cn.iloc[:, 0], cn.iloc[:, 1]))
-
-#     df0.columns = [lkp.get(c, c) for c in df0.columns]
-
-#     df0.to_csv(outpath, index=False, sep='\t')
-#     import sys
-#     print >> sys.stderr, outpath
-
-def main(inputfile):
+def DISABLED__main__DISABLED(inputfile):
     df = pd.io.parsers.read_table(inputfile, sep='\t')
 
     outdir = output_dir(inputfile)
@@ -396,16 +303,23 @@ def main(inputfile):
     # df.columns = [lkp.get(c, c) for c in df.columns]
 
 
-def main(inputfile, refpfx):
-
+def main(inputfile, refpfx=None):
     global REFPFX
-    REFPFX = refpfx
+
+    if refpfx is None:
+        refpfx = REFPFX
+    else:
+        REFPFX = refpfx
+
+    global PPFX
+    PPFX = re.search(r'^(.*?)\d+$', REFPFX).group(1)
 
     df = pd.io.parsers.read_table(inputfile, sep='\t')
 
     #outdir = op.join(output_dir(inputfile), refpfx)
     outdir = output_dir(inputfile)
-    mkdirp(op.join(outdir, refpfx))
+    #mkdirp(op.join(outdir, refpfx))
+    mkdirp(outdir)
 
     # # 1. & 2.
     # df = df[df['Protein Id'].str.contains('^(?!##).*(?<!_contaminant)$')]
@@ -457,8 +371,5 @@ def main(inputfile, refpfx):
 
 
 if __name__ == "__main__":
-    import sys
 
-    inputfile = sys.argv[1]
-
-    main(inputfile, 'S0')
+    main(*sys.argv[1:])
