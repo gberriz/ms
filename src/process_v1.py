@@ -141,6 +141,10 @@ def normalize_c(df):
         if np.any(~hh):
             ii0 = idx[~hh]
 
+            if pfx == REFPFX:
+                # leave zeros in the AV column of the reference set intact
+                jj = filter(lambda p: parse_hdr(p)[1] != AVGSFX, jj)
+
             # jj0 = [j for j in jj
             #        if not parse_hdr(j)[1] in CTRLSFXS.union((AVGSFX,))]
             # df0.loc[ii0, jj0] = np.inf
