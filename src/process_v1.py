@@ -29,8 +29,8 @@ PRINT_SUMS = False
 
 # ---------------------------------------------------------------------------
 
-def parse_hdr(h):
-    return tuple(h.split(SEP) if SEP in h else [h, ''])
+def parse_hdr(h, sep=SEP):
+    return tuple(h.split(sep) if sep in h else [h, ''])
 
 def build_hdr(pfx, sfx):
     return SEP.join([pfx, sfx])
@@ -110,14 +110,23 @@ def to_tsv(df):
 to_hex = np.vectorize(float.hex)
 to_dec = np.vectorize(lambda f: 'inf' if f == np.inf else str(de.Decimal(f)))
 
-def write_tbl(df, output_dir, basename):
+def sortcols(df):
+
+    cols = df.columns
+    peptcolq = lambda c: c.endswith(' Peptides')
+    minpeptcol = min(filter(lambda i: peptcolq(cols[i]), range(len(cols))))
 
     def key((i, hdr)):
 
-        if not SEP in hdr:
+        isdatacol = SEP in hdr
+        ispeptcol = peptcolq(hdr)
+
+        assert not (isdatacol and ispeptcol)
+
+        if not (isdatacol or ispeptcol):
             return (0, i)
 
-        pfx, sfx = parse_hdr(hdr)
+        pfx, sfx = parse_hdr(hdr, sep=SEP if isdatacol else ' ')
 
         idx = re.sub('^' + PPFX, '', pfx)
         try:
@@ -126,6 +135,9 @@ def write_tbl(df, output_dir, basename):
             if not e.message.startswith('invalid literal for int() with base 10'):
                 raise
             n, s = sys.maxint, idx
+
+        if ispeptcol:
+            return (0, minpeptcol, n, s, sfx)
 
         if sfx == AVGSFX:
             m = -3
@@ -138,19 +150,19 @@ def write_tbl(df, output_dir, basename):
 
         return (1, n, s, m, sfx)
 
-    sorted_cols = [c for _, c in sorted(enumerate(df.columns), key=key)]
+    return df.loc[:, [c for _, c in sorted(enumerate(cols), key=key)]]
 
-    df0 = df.loc[:, sorted_cols]
+def write_tbl(df, output_dir, basename):
+    df = df.copy()
+    normalized_cols = [c for c in df.columns if SEP in c]
 
-    normalized_cols = [c for c in sorted_cols if SEP in c]
+    # sums = '\t'.join(to_hex(df.loc[:, normalized_cols].sum(axis=0)))
+    sums = '\t'.join(to_dec(df.loc[:, normalized_cols].sum(axis=0)))
 
-    # sums = '\t'.join(to_hex(df0.loc[:, normalized_cols].sum(axis=0)))
-    sums = '\t'.join(to_dec(df0.loc[:, normalized_cols].sum(axis=0)))
+    # df.loc[:, normalized_cols] = to_hex(df.loc[:, normalized_cols])
+    df.loc[:, normalized_cols] = to_dec(df.loc[:, normalized_cols])
 
-    # df0.loc[:, normalized_cols] = to_hex(df0.loc[:, normalized_cols])
-    df0.loc[:, normalized_cols] = to_dec(df0.loc[:, normalized_cols])
-
-    out = to_tsv(df0)
+    out = to_tsv(df)
 
     out = re.sub(r'(\.\d*[^0\D])0+(?=[\t\n]|$)', r'\1', out, re.M)
     out = re.sub(r'\.0*(?=[\t\n]|$)', '', out, re.M)
@@ -159,11 +171,12 @@ def write_tbl(df, output_dir, basename):
         print >> fh, out
 
         if PRINT_SUMS:
-            w = df0.shape[1]
+            w = df.shape[1]
             for _ in 0, 1:
                 print >> fh, '\t' * (w-1)
 
-            print >> fh, '%s\t%s' % ('\t'.join(['' for c in sorted_cols if not SEP in c]), sums)
+            print >> fh, '%s\t%s' % ('\t'.join(['' for c in df.columns
+                                                if not c in normalized_cols]), sums)
 
     print >> sys.stderr, outpath
 
@@ -272,6 +285,9 @@ def main(inputfile, refpfx=None):
     # --------------------------------------------------------------------------
 
     df = add_av_cols(df)
+
+    # 4.
+    df = sortcols(df)
     write_tbl(df, outdir, 'prenorm')
 
     # 8. & 9.
