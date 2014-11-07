@@ -1,3 +1,11 @@
+'''
+
+Run with:
+
+% python src/process_v1.py data/mkw.tsv data/tsv/GO_NSAF/GO_NSAF.tsv
+
+'''
+
 import sys
 
 import os
@@ -243,7 +251,7 @@ def normalization_c(df):
 
 # ---------------------------------------------------------------------------
 
-def main(inputfile, refpfx=None):
+def main(inputfile, go_nsaf_file, refpfx=None):
     global REFPFX
 
     if refpfx is None:
@@ -276,8 +284,7 @@ def main(inputfile, refpfx=None):
 
     # --------------------------------------------------------------------------
 
-    godf_tsv = 'data/tsv/GO_NSAF/GO_NSAF.tsv'
-    godf = dropcols(pd.io.parsers.read_table(godf_tsv, sep='\t'), 'Gene')
+    godf = dropcols(pd.io.parsers.read_table(go_nsaf_file, sep='\t'), 'Gene')
 
     godf.columns = [re.sub(r'(?<=^Uniprot)-l$', '', s) for s in godf.columns]
 
