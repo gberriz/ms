@@ -190,7 +190,7 @@ def add_av_cols(df):
         df0.loc[:, avcolhdr] = df0.loc[:, ctrlhdrs].mean(axis=1)
     return df0
 
-def normalize_a(df):
+def normalization_a(df):
     for pfx in get_pfxs(df):
         n = refsum(df, pfx)
         tgt = get_headers_for_prefix(df, pfx, pfx == REFPFX)
@@ -198,7 +198,7 @@ def normalize_a(df):
         df = colscale(df, tgt, n/d)
     return df
 
-def normalize_b(df):
+def normalization_b(df):
     df0 = df.copy()
     num = refsum(df, REFPFX)
     for pfx in get_first_control_col_pfxs(df0):
@@ -207,14 +207,14 @@ def normalize_b(df):
         df0.loc[:, tgt] = s * df0.loc[:, tgt].values
     return df0
 
-def normalize_ab(df):
+def normalization_ab(df):
     tgt = sum([get_headers_for_prefix(df, pfx, pfx == REFPFX) for pfx in
                get_first_control_col_pfxs(df)], [])
     refcol = build_hdr(REFPFX, AVGSFX)
     s = float(df.loc[:, refcol].sum())/df.loc[:, tgt].sum()
     return colscale(df, tgt, s)
 
-def normalize_c(df):
+def normalization_c(df):
 
     df0 = df.copy()
 
@@ -259,15 +259,20 @@ def main(inputfile, refpfx=None):
     outdir = output_dir(inputfile)
     mkdirp(outdir)
 
-    # 1. & 2.
+    # 1. remove 'reverse hits'
+    # 2. remove contaminant proteins
     df = df[df['Protein Id'].str.contains(r'^(?!##).*(?<!_contaminant)$')]
     
-    # 3.
+    # 3. separate Uniprot identifiers
     df = split_first_col(df)
     df.index = df.iloc[:, 0]
 
-    # 5.
-    df = dropcols(df, lambda x: re.match(r'^Set(?:12|AtoD|EtoH|5~cq_1(?:28|30)[ab]_sn_sum)\b', x))
+    # 5. remove data not relevant to main dataset
+    # (minus the relabeling of data columns: the proposed relabeling
+    # scheme(s) are not bijective)
+    df = dropcols(df,
+                  lambda x: re.match(r'Set(?:(?:12|AtoD|EtoH)\b|5~cq_1(?:28|30)[ab]_sn_sum$)',
+                                     x))
 
     # --------------------------------------------------------------------------
 
@@ -279,26 +284,30 @@ def main(inputfile, refpfx=None):
     assert set.issuperset(set(godf.loc[:, 'Uniprot']),
                           set(df.loc[:, 'Uniprot']))
 
+    # 6. add GO terms
     df = df.merge(godf.loc[:, ['Uniprot', 'GOCC']],
                   on='Uniprot', how='inner')
+
+    # 7. add spectral counts data
+    # OMITTED
 
     # --------------------------------------------------------------------------
 
     df = add_av_cols(df)
 
-    # 4.
+    # 4. reorder the data columns
     df = sortcols(df)
     write_tbl(df, outdir, 'prenorm')
 
-    # 8. & 9.
-    dfab = normalize_ab(df)
+    # (just for qc)
+    dfab = normalization_ab(df)
 
     # 8.
-    df = normalize_a(df)
+    df = normalization_a(df)
     write_tbl(df, outdir, 'norm_A')
 
     # 9.
-    df = normalize_b(df)
+    df = normalization_b(df)
     write_tbl(df, outdir, 'norm_B')
 
     def chk(x, y):
@@ -309,9 +318,15 @@ def main(inputfile, refpfx=None):
     del dfab
 
     # 10.
-    df = normalize_c(df)
+    df = normalization_c(df)
     write_tbl(df, outdir, 'norm_C')
 
+    # 11. remove all control data apart from Set1 controls
+    # OMITTED
+    # 12. sort data such that proteins with >= 1 peptides quantified in all samples are analyzed first
+    # OMITTED
+    # 13. normalize data for each protein to a maximum of 1
+    # OMITTED
 
 if __name__ == "__main__":
     # PRINT_SUMS = True
