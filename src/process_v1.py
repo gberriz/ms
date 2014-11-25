@@ -279,7 +279,7 @@ def main(inputfile, go_nsaf_file, refpfx=None):
     # (minus the relabeling of data columns: the proposed relabeling
     # scheme(s) are not bijective)
     df = dropcols(df,
-                  lambda x: re.match(r'Set(?:(?:12|AtoD|EtoH)\b|5~cq_1(?:28|30)[ab]_sn_sum$)',
+                  lambda x: re.match(r'Set(?:(?:AtoD|EtoH)\b|5~cq_1(?:28|30)[ab]_sn_sum$)',
                                      x))
 
     # --------------------------------------------------------------------------
